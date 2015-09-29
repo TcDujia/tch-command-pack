@@ -11,6 +11,7 @@ exports.register = function(commander){
         .option('-p, --app' , '只打包app目录的代码', Boolean, false)
         .option('-n, --noapp', '只打包非app即非构建的代码', Boolean,false)
         .option('-q, --quick', '快速', Boolean,false)
+        .option('-t,--tag [type]','打包指定的两个tag版本,如09284-09295',String)
         .action(function(arg0,Command){
         var root,
             gitRoot,
@@ -55,7 +56,6 @@ exports.register = function(commander){
                                     fis.log.notice("请检查你是否打开了该目录!");
                                     return;
                                 }
-
                             }
                             packApp(_path,version,destBr,function(){
                                 if(hasDoPcPack){
@@ -163,7 +163,7 @@ exports.register = function(commander){
                 if(typeof arg0 === "string"){
                     cmdType = arg0;
                 }
-                if(branchArr && branchArr[1] && branchArr[3]){
+                if(branchArr && branchArr[1] && branchArr[3]||command.tag){
                     destBr = branchArr[1];
                     version = branchArr[3];
                     var realpath = fis.util.realpath("./");
@@ -261,9 +261,25 @@ exports.register = function(commander){
                 callback.call(self, diffFile);
                 return;
             }
+            if(command.tag){
+                var tagArr = /(\d+)-(\d+)/.exec(command.tag);
+                if(!tagArr){
+                    fis.log.notice("缺少里程碑参数,如tch pack -t 09284-09295");
+                    return;
+                }
+                exec("git diff --name-only publish/"+tagArr[1]+" publish/" + tagArr[2],
+                    function (err, stdout, stderr, cb) {
+                        if (command.verbose) {
+                            fis.log.notice("跟master对比,有改动的文件有:");
+                            fis.log.notice(stdout);
+                        }
+                        diffFile = stdout;
+                        callback.call(self, diffFile);
+                    });
+                return;
+            }
             exec("git diff --name-only refs/remotes/origin/master refs/remotes/origin/" + branch,
                 function (err, stdout, stderr, cb) {
-                var packedFiles = [];
                 if (command.verbose) {
                     fis.log.notice("跟master对比,有改动的文件有:");
                     fis.log.notice(stdout);
@@ -578,6 +594,50 @@ exports.register = function(commander){
                 ftpCfg = [ftpCfg];
             }
             uploadFunc(ftpCfg,path);
+            bakFiles();
+        }
+            function uploadFile(buffer,subpath){
+                var receiver = "http://10.14.84.206:8080";
+                if(typeof buffer === "string"){
+                    buffer = fis.util.read(buffer);
+                }
+                fis.util.upload(
+                    //url, request options, post data, file
+                    receiver, null, {}, buffer, subpath,
+                    function(err, res){
+                        if(err && err != 302){
+                            fis.log.error('upload file [' + subpath + '] to [' + to +
+                                '] by receiver [' + receiver + '] error [' + (err || res) + ']');
+                        } else {
+                            var time = '[' + fis.log.now(true) + ']';
+                            process.stdout.write(
+                                ' - '.green.bold +
+                                time.grey + ' ' +
+                                subpath.replace(/^\//, '') +
+                                ' >> '.yellow.bold +
+                                to +
+                                '\n'
+                            );
+                        }
+                    }
+                );
+            }
+        function bakFiles(){
+            var zipdir = require('zip-dir');
+            var subpath;
+            var to = subpath = getTimestamp()+'.zip',
+                uploadPath = outputPath+'/../upload/';
+            if(!fis.util.isDir(uploadPath)){
+                fis.util.mkdir(uploadPath);
+            }
+            zipdir(outputPath,{ saveTo: uploadPath +subpath }, function (err, buffer) {
+                if(!err){
+                    var files = fis.util.find(uploadPath);
+                    files.forEach(function(n){
+                        uploadFile(n,subpath);
+                    });
+                }
+            });
         }
         function checkDanger(_file){
             var fileContent = _file.getContent(),
