@@ -709,8 +709,8 @@ exports.register = function(commander){
                             if(cmdType === "publish" && checkDanger(_file)){
                                 global.isError = true;
                             }
-                            fileContent = fileContent.replace(/url\(['"]?([^)]+?)['"]?\)|<link[^>]+href=['"]?([^'"]+)['"]?|\ssrc=['"]?([^'"]+)['"]?/g,function($0,$1,$2,$3){
-                                var value = $1||$2||$3,
+                            fileContent = fileContent.replace(/url\((\\?['"]?)([^)]+?)\1\)|<link[^>]+href=(\\?['"]?)([^'"]+)\3|\ssrc=(\\?['"]?)([^'"]+)\5/g,function($0,$_1,$1,$_2,$2,$_3,$3){
+                                var value = $2||$4||$6,
                                     filePath = _file.dirname+"/"+value,
                                     localFilePath = fis.util.realpath(filePath);
                                 if(!localFilePath){
@@ -721,7 +721,7 @@ exports.register = function(commander){
                                             _file.realpath.indexOf(":")===-1
                                         ){
                                             fis.log.warning(_file.realpath.bold.red+"存在问题:")
-                                            fis.log.warning($1.bold.red+"不存在!");
+                                            fis.log.warning($2.bold.red+"不存在!");
                                         }
                                     }
                                     return $0;
@@ -732,7 +732,8 @@ exports.register = function(commander){
                                         _regX = _packItem.reg;
                                     if(_regX.test(localFilePath)){
                                         url = localFilePath.replace(_regX,_packItem.domain[type])
-                                            .replace("$1",packItem["$1"]).replace("$2",packItem["$2"])
+                                            .replace("$1",packItem["$1"])
+                                            .replace("$2",packItem["$2"])
                                             .replace("$3",packItem["$3"])
                                             .replace(gitRoot+"/","")
                                             .replace(/{{(\w+)}}/g,function($0,$1){
