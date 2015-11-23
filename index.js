@@ -30,7 +30,8 @@ exports.register = function(commander){
             codeType = "app",
             version,
             command = Command||arg0;
-
+        var UglifyJS = require('uglify-js');
+        var CleanCss = require('clean-css');
         var hashTempPath = "./.hashTemp";
         var diffHashPath = "./.diffTemp";
         var exec = require('child_process').exec;
@@ -82,13 +83,16 @@ exports.register = function(commander){
 
                 })
             })
-            function getTimestamp(){
+            function getTimestamp(isMore){
                 var D = new Date(),
                     _m = D.getMonth()+ 1,
                     month = _m>9?_m: "0"+_m,
                     _d = D.getDate(),
                     date = _d>9?_d: "0"+_d,
                     _date =""+ (month)+""+ date  +Math.ceil(D.getHours()/4);
+                if(isMore){
+                    _date = ""+(month)+ date + D.getHours()+ D.getMinutes()+"_"+(userName||"");
+                }
                 return _date;
             }
         function createTag(callback){
@@ -257,17 +261,24 @@ exports.register = function(commander){
             if (command.complete) {
                 fis.log.notice("正在全量打包...");
                 diffFile = fis.util.find("../").join("\n");
-                //fis.log.notice(diffFile);
                 callback.call(self, diffFile);
                 return;
             }
             if(command.tag){
-                var tagArr = /(\d+)-(\d+)/.exec(command.tag);
-                if(!tagArr){
-                    fis.log.notice("缺少里程碑参数,如tch pack -t 09284-09295");
-                    return;
+                var tagArr = /(\d{5,6})-(\d{5,6})/.exec(command.tag);
+                if(tagArr){
+                    tagArr[1] = "publish/"+tagArr[1];
+                    tagArr[2] = "publish/"+tagArr[2];
+                }else{
+                    //检测是否是md5戳
+                    tagArr = /([\w\d]{8,})-([\w\d]{8,})/i.exec(command.tag);
+                    if(!tagArr){
+                        fis.log.notice("请使用里程碑方式,如tch pack -t 09284-09295");
+                        fis.log.notice("或使用md5对比方式,md5不少于8位,如tch pack -t dee565c88870-c80e6f41c51a2562a7fb9");
+                        return;
+                    }
                 }
-                exec("git diff --name-only publish/"+tagArr[1]+" publish/" + tagArr[2],
+                exec("git diff --name-only "+tagArr[1]+" " + tagArr[2],
                     function (err, stdout, stderr, cb) {
                         if (command.verbose) {
                             fis.log.notice("跟master对比,有改动的文件有:");
@@ -344,9 +355,11 @@ exports.register = function(commander){
                 fis.log.notice("没有配置打包配置!");
                 return;
             }
+            var isNoMatch = false;
             for(var n = 0, nLen = appConf.length -1; n<=nLen; n++){
                 appConfItem = appConf[n];
                 if(appConfItem.reg.test(item)){
+                    isNoMatch = true;
                     var execArr = appConfItem.reg.exec(item),
                         toStr = appConfItem.to,
                         toPath = toStr[cmdType].replace(/\$(\d+)/g,function($0,$1){
@@ -362,6 +375,11 @@ exports.register = function(commander){
                     });
                     break;
                 }
+            }
+            if(!isNoMatch){
+                process.nextTick(function(){
+                    copyAppFile.apply(self,args);
+                });
             }
         }
         function collectAppRes(type,callback){
@@ -594,7 +612,11 @@ exports.register = function(commander){
                 ftpCfg = [ftpCfg];
             }
             uploadFunc(ftpCfg,path);
-            bakFiles();
+            try{
+                bakFiles();
+            }catch(e){
+                fis.log.notice("备份打包源码失败!");
+            }
         }
             function uploadFile(buffer,subpath){
                 var receiver = "http://10.14.84.206:8080";
@@ -625,7 +647,7 @@ exports.register = function(commander){
         function bakFiles(){
             var zipdir = require('zip-dir');
             var subpath;
-            var to = subpath = getTimestamp()+'.zip',
+            var to = subpath = getTimestamp(true)+'.zip',
                 uploadPath = outputPath+'/../upload/';
             if(!fis.util.isDir(uploadPath)){
                 fis.util.mkdir(uploadPath);
@@ -638,9 +660,10 @@ exports.register = function(commander){
                     });
                 }
             });
-        }
+        };
+        //检查危险代码
         function checkDanger(_file){
-            var fileContent = _file.getContent(),
+            var fileContent = _file.minContent||_file.getContent(),
                 dangerConf = packConf && packConf.pack.danger,
                 dangerExclude = dangerConf.exclude,
                 dangerMatch = fileContent.match(dangerConf.reg);
@@ -664,7 +687,6 @@ exports.register = function(commander){
                 }else{
                     return true;
                 }
-
             }
         }
         function lookup(fromArr,cfg,callback){
@@ -706,6 +728,8 @@ exports.register = function(commander){
                             hash = _file.getHash();
                         var fileContent = _file.getContent();
                         if(_file._isText){
+                            //压缩文本
+                            zipResource(_file);
                             if(cmdType === "publish" && checkDanger(_file)){
                                 global.isError = true;
                             }
@@ -745,7 +769,18 @@ exports.register = function(commander){
                                 return $0.replace(value,url);
                             });
                         }
-                        fis.util.write(extraPath+toPath,fileContent);
+                        var _path = extraPath+toPath;
+                        if(_file._isText){
+                            if(cmdType === "daily"){
+                                fis.util.write(_path,fileContent);
+                            }else{
+                                fis.util.write(_path,_file.minContent||fileContent);
+                            }
+                            fis.util.write(_path.replace(/\.(\w+)$/,".pkg.$1"),fileContent);
+                        }else{
+                            fis.util.write(_path,fileContent);
+                        }
+
                         if(from.indexOf("img") === -1||_file.ext === ".html"){
                             if(command.verbose){
                                 fis.log.notice("源文件:"+from);
@@ -756,7 +791,6 @@ exports.register = function(commander){
                                 clearTimeout(timeoutT);
                             }
                             timeoutT = setTimeout(function(){
-                                //console.log("test");
                                 if(global.isError){
                                     fis.log.notice("打包出现问题,中断!");
                                     return;
@@ -772,8 +806,16 @@ exports.register = function(commander){
                     }
                 }
             }
-
-
+        }
+        function zipResource(file){
+            var content = file.getContent(),
+                ret;
+            if(file.ext === ".js"){
+                ret = UglifyJS.minify(content, {fromString: true}).code;
+            }else if(file.ext === ".css"){
+                ret = new CleanCss().minify(content).styles
+            }
+            file.minContent = ret;
         }
         function writeLog(from,url){
             var srcLine = "源文件:"+from,
