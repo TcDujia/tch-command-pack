@@ -1,6 +1,6 @@
 {
   "name": "tch-command-pack",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -36,15 +36,7 @@
       "email": "imfpe@qq.com"
     }
   ],
-  "dist": {
-    "shasum": "8322fb0aa4aa3a1072ccf31cc26ceed99dff20d7",
-    "size": 8288,
-    "noattachment": false,
-    "tarball": "http://172.16.51.21:8765/tch-command-pack/download/tch-command-pack-0.1.2.tgz"
-  },
   "directories": {},
   "publish_time": 1426137383261,
-  "_cnpm_publish_time": 1426137383261,
-  "_resolved": "http://172.16.51.21:8765/tch-command-pack/download/tch-command-pack-0.1.2.tgz",
   "readme": "ERROR: No README data found!"
 }

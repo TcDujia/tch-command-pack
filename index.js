@@ -734,7 +734,7 @@ exports.register = function(commander){
                                 global.isError = true;
                             }
                             fileContent = fileContent.replace(/url\((\\?['"]?)([^)]+?)\1\)|<link[^>]+href=(\\?['"]?)([^'"]+)\3|\ssrc=(\\?['"]?)([^'"]+)\5/g,function($0,$_1,$1,$_2,$2,$_3,$3){
-                                var value = $2||$4||$6,
+                                var value = $1||$2||$3,
                                     filePath = _file.dirname+"/"+value,
                                     localFilePath = fis.util.realpath(filePath);
                                 if(!localFilePath){
