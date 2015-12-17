@@ -12,6 +12,7 @@ exports.register = function(commander){
         .option('-n, --noapp', '只打包非app即非构建的代码', Boolean,false)
         .option('-q, --quick', '快速', Boolean,false)
         .option('-t,--tag [type]','打包指定的两个tag版本,如09284-09295',String)
+        .option('-E,--ebk','打包ebktouch版',Boolean, false)
         .action(function(arg0,Command){
         var root,
             gitRoot,
@@ -30,11 +31,14 @@ exports.register = function(commander){
             codeType = "app",
             version,
             command = Command||arg0;
+        //var Git = require("../nodegit");
         var UglifyJS = require('uglify-js');
         var CleanCss = require('clean-css');
         var hashTempPath = "./.hashTemp";
         var diffHashPath = "./.diffTemp";
         var exec = require('child_process').exec;
+            //debugger;
+            //return;
             doExec("git config --get user.name",function(err,stdout){
                 userName = stdout;
                 fis.log.notice("Hi! "+userName);
@@ -45,7 +49,7 @@ exports.register = function(commander){
                 checkBranch(function(version,destBr){
                     initEnv();
                     getDiffFiles(destBr,function(){
-                        var hasDoAppPack = /(app|weixin|wanle)\/.*\.((?!html|json)\S)+\b/g.exec(diffFile),
+                        var hasDoAppPack = /(app|weixin|wanle|ebk)\/.*\.((?!html|json)\S)+\b/ig.exec(diffFile),
                             hasDoPcPack = /(pc|touch|module|EBooking)\/.*\b/ig.test(diffFile);
                         if(hasDoAppPack&& !command.noapp){
                             var _path = codeType;
@@ -157,8 +161,8 @@ exports.register = function(commander){
             fis.log.notice("正在检测分支,请稍候...");
             doExec("git status -sb",function(err,stdout,stderr,cb){
                 var statusArr = stdout.split("\n"),
-                    branchArr = /##\s((daily|weixin|wanle)\/(\d+\.\d+\.\d+))/.exec(statusArr[0]),
-                    devBrArr = /##\s((weixin|wanle)\/develop|develop)/.exec(statusArr[0]);
+                    branchArr = /##\s((daily|weixin|wanle|ebooking)\/(\d+\.\d+\.\d+))/i.exec(statusArr[0]),
+                    devBrArr = /##\s((weixin|wanle|ebooking)\/develop|develop)/i.exec(statusArr[0]);
                 //如果没有代码未提交,则会有两行,第一行为分支信息,第二行为空行
                 if(statusArr.length >=3){
                     fis.log.notice("当前分支还有代码未提交,请提交后再进行操作!");
@@ -455,6 +459,8 @@ exports.register = function(commander){
                     gitRoot = fis.util.realpath("./");
                 }else{
                     gitRoot = fis.util.realpath(root+"/"+extraPath);
+                    //console.log(gitRoot);
+                    gitRoot = getRoot();
                 }
             }
         }
@@ -669,8 +675,8 @@ exports.register = function(commander){
                 dangerMatch = fileContent.match(dangerConf.reg);
             if(dangerMatch){
                 var flag = true;
+                var fullFileName = _file.fullname;
                 if(dangerExclude){
-                    var fullFileName = _file.realpath;
                     dangerExclude.forEach(function(n,i){
                         if(fullFileName.indexOf(n)>-1){
                             flag = false;
@@ -681,10 +687,10 @@ exports.register = function(commander){
                 if(!flag){
                     return;
                 }
-                fis.log.notice(_file+"包含危险字段:"+(dangerMatch.join(",")).red);
-                if(_file.indexOf("html")>-1){
+                if(fullFileName.indexOf("html")>-1){
                     return;
                 }else{
+                    fis.log.notice(fullFileName+"包含危险字段:"+(dangerMatch.join(",")).red);
                     return true;
                 }
             }
@@ -728,11 +734,6 @@ exports.register = function(commander){
                             hash = _file.getHash();
                         var fileContent = _file.getContent();
                         if(_file._isText){
-                            //压缩文本
-                            zipResource(_file);
-                            if(cmdType === "publish" && checkDanger(_file)){
-                                global.isError = true;
-                            }
                             fileContent = fileContent.replace(/url\((\\?['"]?)([^)]+?)\1\)|<link[^>]+href=(\\?['"]?)([^'"]+)\3|\ssrc=(\\?['"]?)([^'"]+)\5/g,function($0,$_1,$1,$_2,$2,$_3,$3){
                                 var value = $1||$2||$3,
                                     filePath = _file.dirname+"/"+value,
@@ -768,6 +769,12 @@ exports.register = function(commander){
                                 }
                                 return $0.replace(value,url);
                             });
+                            //压缩文本
+                            _file.setContent(fileContent);
+                            zipResource(_file);
+                            if(cmdType === "publish" && checkDanger(_file)){
+                                global.isError = true;
+                            }
                         }
                         var _path = extraPath+toPath;
                         if(_file._isText){
@@ -811,9 +818,17 @@ exports.register = function(commander){
             var content = file.getContent(),
                 ret;
             if(file.ext === ".js"){
-                ret = UglifyJS.minify(content, {fromString: true}).code;
+                try{
+                    ret = UglifyJS.minify(content, {fromString: true}).code;
+                }catch(e){
+                    fis.log.notice(file.release, e.message);
+                }
             }else if(file.ext === ".css"){
-                ret = new CleanCss().minify(content).styles
+                try{
+                    ret = new CleanCss().minify(content).styles
+                }catch(e){
+                    fis.log.notice(file.release, e.message);
+                }
             }
             file.minContent = ret;
         }
@@ -847,6 +862,20 @@ exports.register = function(commander){
             }
             fis.project.setProjectRoot(root);
         }
+              var path = require("path");
+              function getRoot(){
+                  var thisPath = fis.util.realpath(process.cwd());
+                  var fileName = "pack.json";
+                  var packFilePath = thisPath+"/" + fileName;
+                  while(!fis.util.exists(packFilePath)){
+                      thisPath = path.resolve(thisPath,"../");
+                      packFilePath = path.join(thisPath,fileName);
+                      if(!packFilePath.length){
+                          return
+                      }
+                  }
+                  return thisPath
+              }
     });
 }
 exports.commands = function(){
